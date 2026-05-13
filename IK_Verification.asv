@@ -1,0 +1,117 @@
+% IK_Verification
+% 思路：用正运动学画一个姿态，然后从另一个初始量解出逆运动学，比较两个位姿之间的差距。
+
+clear;
+clc;
+close all;
+
+global Link
+
+% 设定目标位姿和起始位姿
+q_target = [-35; 55; -40; 850; 70; -50; 80];
+q0       = [-0; 90; 75; 100; -60; 110; -66];
+
+% 正运动学计算目标位姿.
+DHfk_7DoFRobot_Aboka(q_target(1),q_target(2),q_target(3),q_target(4),q_target(0),q_target(0),q_target(0),0);
+
+T_target = LocalFK7DoF(q_target);
+R_target = T_target(1:3, 1:3);
+p_target = T_target(1:3, 4);
+
+% Solve IK from another initial joint vector.
+[q_sol, info] = IK_NS_7DoF(q0, T_target);
+
+% Verify by forward kinematics again.
+T_sol = LocalFK7DoF(q_sol);
+R_sol = T_sol(1:3, 1:3);
+p_sol = T_sol(1:3, 4);
+
+position_error = norm(p_target - p_sol);
+rotation_error_deg = LocalRotationErrorDeg(R_target, R_sol);
+
+disp('===== IK Verification Result =====');
+disp(['success             : ', mat2str(info.success)]);
+disp(['iterations          : ', num2str(info.iter)]);
+disp(['normalized loss     : ', num2str(info.loss, '%.6g')]);
+disp(['position error (mm) : ', num2str(position_error, '%.6g')]);
+disp(['rotation error (deg): ', num2str(rotation_error_deg, '%.6g')]);
+disp(' ');
+disp('q_target = ');
+disp(q_target);
+disp('q_sol = ');
+disp(q_sol);
+
+% Draw solved robot using the FK drawing function required by the assignment.
+figure('Color', 'w', 'Name', 'IK Orientation Verification');
+hold on;
+axis equal;
+grid on;
+DHfk_7DoFRobot_Aboka(q_sol(1), q_sol(2), q_sol(3), q_sol(4), q_sol(5), q_sol(6), q_sol(7), 0);
+title('IK result drawn by DHfk\_7DoFRobot\_Aboka');
+
+% Draw target and solved end-effector frames for visual orientation checking.
+frameScale = 180;
+LocalDrawFrame(p_target, R_target, frameScale, '--', 'Target');
+LocalDrawFrame(p_sol, R_sol, frameScale, '-', 'Solved');
+legend('Location', 'bestoutside');
+
+fprintf('\nCheck rule: rotation_error_deg close to 0 means the solved orientation matches the target orientation.\n');
+
+
+function T = LocalFK7DoF(q)
+% Compute end-effector pose without drawing.
+global Link
+ToRad = pi/180;
+
+Build_7DOFRobot_Aboka;
+
+Link(2).th = q(1)*ToRad;
+Link(3).th = q(2)*ToRad;
+Link(4).th = q(3)*ToRad;
+Link(5).dz = q(4);
+Link(6).th = q(5)*ToRad;
+Link(7).th = q(6)*ToRad;
+Link(8).th = q(7)*ToRad;
+
+for i = 1:8
+    Matrix_DH_Ln(i);
+end
+
+for i = 2:8
+    Link(i).A = Link(i-1).A * Link(i).A;
+    Link(i).p = Link(i).A(1:3,4);
+    Link(i).n = Link(i).A(:,1);
+    Link(i).o = Link(i).A(:,2);
+    Link(i).a = Link(i).A(:,3);
+    Link(i).R = [Link(i).n(1:3), Link(i).o(1:3), Link(i).a(1:3)];
+end
+
+T = Link(8).A;
+T(4,:) = [0 0 0 1];
+end
+
+
+function angleDeg = LocalRotationErrorDeg(R_target, R_actual)
+% Return the angle of R_target * R_actual' in degrees.
+R_err = R_target * R_actual';
+cos_theta = (trace(R_err) - 1) / 2;
+cos_theta = max(min(cos_theta, 1), -1);
+angleDeg = acos(cos_theta) * 180/pi;
+end
+
+
+function LocalDrawFrame(origin, R, scale, lineStyle, labelText)
+% Draw a coordinate frame whose axes are stored in the columns of R.
+colors = {'r', 'g', 'b'};
+axisNames = {'x', 'y', 'z'};
+
+for k = 1:3
+    v = scale * R(:,k);
+    quiver3(origin(1), origin(2), origin(3), v(1), v(2), v(3), ...
+        0, 'Color', colors{k}, 'LineStyle', lineStyle, 'LineWidth', 2, ...
+        'DisplayName', [labelText, ' ', axisNames{k}]);
+end
+
+text(origin(1), origin(2), origin(3), ['  ', labelText], ...
+    'FontSize', 10, 'FontWeight', 'bold');
+end
