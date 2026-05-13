@@ -1,14 +1,14 @@
 function [q, info] = IK_NS_7DoF(q0, T_target)
-% IK_NS_7DoF Numerical inverse kinematics for the 7-DOF Aboka robot.
+% IK_NS_7DoF 7自由度Aboka机械臂的数值逆运动学求解函数。
 %
-% Inputs:
-%   q0       : 7x1 initial joint vector [th1; th2; th3; d4; th5; th6; th7]
-%              revolute joints are in degrees, d4 is in mm.
-%   T_target : 4x4 target homogeneous transformation matrix.
+% 输入：
+%   q0       : 7x1初始关节变量[th1; th2; th3; d4; th5; th6; th7]
+%              转动关节单位为度，移动关节d4单位为mm。
+%   T_target : 4x4目标齐次变换矩阵。
 %
-% Outputs:
-%   q        : 7x1 solved joint vector, same unit convention as q0.
-%   info     : solution information.
+% 输出：
+%   q        : 7x1求解得到的关节变量，单位约定与q0相同。
+%   info     : 求解过程信息。
 
 global Link
 
@@ -21,18 +21,15 @@ tol = 1e-5;
 ToDeg = 180/pi;
 ToRad = pi/180;
 
-% Task-space scaling. Position is in mm, orientation is in rad.
+% 任务空间归一化尺度：位置单位为mm，姿态单位为rad。
 posScale = 100;
 rotScale = 1;
 
-% Switch to full pose tracking after the position is close enough.
-posSwitchTol = 30; % mm
-
-% Joint limits. Revolute joints are in degrees, the prismatic joint is in mm.
+% 关节限位：转动关节单位为度，移动关节单位为mm。
 q_min = [-180; -120; -120; 0;    -180; -120; -180];
 q_max = [ 180;  120;  120; 1500;  180;  120;  180];
 
-% span must match dq units: revolute updates are in rad, d4 update is in mm.
+% span必须与dq单位一致：转动关节修正量为rad，d4修正量为mm。
 span = [
     (q_max(1)-q_min(1))*ToRad;
     (q_max(2)-q_min(2))*ToRad;
@@ -56,7 +53,7 @@ p_ref = T_target(1:3, 4);
 R_ref = T_target(1:3, 1:3);
 
 while true
-    % Current pose.
+    % 当前关节变量写入全局Link结构体。
     Link(2).th = th1*ToRad;
     Link(3).th = th2*ToRad;
     Link(4).th = th3*ToRad;
@@ -81,28 +78,22 @@ while true
     p_now = Link(8).p(1:3);
     R_now = Link(8).R;
 
-    % Pose error.
+    % 计算末端位姿误差。
     p_err = p_ref - p_now;
     R_err = R_ref * R_now';
     w_err = LocalRotationVector(R_err);
 
-    positionOnly = norm(p_err) > posSwitchTol;
-    if positionOnly
-        err = p_err / posScale;
-    else
-        err = [
-            p_err / posScale;
-            w_err / rotScale
-        ];
-    end
+    err = [
+        p_err / posScale;
+        w_err / rotScale
+    ];
     Loss = norm(err);
 
-    % Only declare success after switching to full pose tracking.
-    if ~positionOnly && Loss < tol
+    % 判定求解成功。
+    if Loss < tol
         info.success = true;
         info.loss = Loss;
         info.iter = iter;
-        info.phase = 'full_pose';
         info.positionError = norm(p_err);
         info.rotationError = norm(w_err);
         q = [th1; th2; th3; d4; th5; th6; th7];
@@ -112,11 +103,6 @@ while true
     if iter >= maxiter
         info.success = false;
         info.loss = Loss;
-        if positionOnly
-            info.phase = 'position_only';
-        else
-            info.phase = 'full_pose';
-        end
         info.iter = iter;
         info.positionError = norm(p_err);
         info.rotationError = norm(w_err);
@@ -124,23 +110,18 @@ while true
         break;
     end
 
-    % Joint update.
+    % 计算关节修正量。
     J = Jacobian7DoF_Ln(th1, th2, th3, d4, th5, th6, th7);
-    if positionOnly
-        J_s = J(1:3,:) / posScale;
-        taskEye = eye(3);
-    else
-        J_s = [
-            J(1:3,:) / posScale;
-            J(4:6,:) / rotScale
-        ];
-        taskEye = eye(6);
-    end
+    J_s = [
+        J(1:3,:) / posScale;
+        J(4:6,:) / rotScale
+    ];
+    taskEye = eye(6);
 
     J_dls = J_s' / (J_s * J_s' + lambda^2 * taskEye);
     dq = learning_rate * J_dls * err;
 
-    % Limit the update by each joint's own motion range.
+    % 根据每个关节自身的活动范围限制单步修正量。
     normalizedStep = norm(dq ./ span);
     if normalizedStep > maxNormalizedStep
         dq = dq * (maxNormalizedStep / normalizedStep);
@@ -172,7 +153,7 @@ end
 
 
 function w_err = LocalRotationVector(R_err)
-% Convert a rotation error matrix into a 3x1 rotation-vector error.
+% 将旋转误差矩阵转换为3x1姿态误差向量。
 cos_theta = (trace(R_err) - 1) / 2;
 cos_theta = max(min(cos_theta, 1), -1);
 theta = acos(cos_theta);
