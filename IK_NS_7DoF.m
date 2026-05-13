@@ -12,17 +12,19 @@ function [q, info] = IK_NS_7DoF(q0, T_target)
 
 global Link
 
-learning_rate = 0.5;
+learning_rate = 0.8;
 lambda = 0.05;
 iter = 0;
 maxiter = 50000;
-tol = 1e-5;
+tol = 1e-3;
+maxLineSearch = 3;
+maxNormalizedStep = 0.1;
 
 ToDeg = 180/pi;
 ToRad = pi/180;
 
 % 任务空间归一化尺度：位置单位为mm，姿态单位为rad。
-posScale = 100;
+posScale = 50;
 rotScale = 1;
 
 % 关节限位：转动关节单位为度，移动关节单位为mm。
@@ -39,7 +41,8 @@ span = [
     (q_max(6)-q_min(6))*ToRad;
     (q_max(7)-q_min(7))*ToRad
 ];
-maxNormalizedStep = 0.05;
+
+
 
 th1 = q0(1);
 th2 = q0(2);
@@ -65,6 +68,8 @@ while true
     for i = 1:8
         Matrix_DH_Ln(i);
     end
+
+    Link(1).p=Link(1).p(1:3);
 
     for i = 2:8
         Link(i).A = Link(i-1).A * Link(i).A;
@@ -111,14 +116,22 @@ while true
     end
 
     % 计算关节修正量。
-    J = Jacobian7DoF_Ln(th1, th2, th3, d4, th5, th6, th7);
+    J=zeros(6,7);
+    for n=1:7
+        a = Link(n).R*Link(n).az;
+        if n == 4
+            J(:,n) = [a; [0; 0; 0]];
+        else
+            J(:,n)=[cross(a,Link(8).p-Link(n).p); a];
+        end
+    end
+
     J_s = [
         J(1:3,:) / posScale;
         J(4:6,:) / rotScale
     ];
-    taskEye = eye(6);
 
-    J_dls = J_s' / (J_s * J_s' + lambda^2 * taskEye);
+    J_dls = J_s' / (J_s * J_s' + lambda^2 * eye(6));
     dq = learning_rate * J_dls * err;
 
     % 根据每个关节自身的活动范围限制单步修正量。
@@ -127,16 +140,26 @@ while true
         dq = dq * (maxNormalizedStep / normalizedStep);
     end
 
-    th1 = th1 + dq(1)*ToDeg;
-    th2 = th2 + dq(2)*ToDeg;
-    th3 = th3 + dq(3)*ToDeg;
-    d4  = d4  + dq(4);
-    th5 = th5 + dq(5)*ToDeg;
-    th6 = th6 + dq(6)*ToDeg;
-    th7 = th7 + dq(7)*ToDeg;
-
     q_now = [th1; th2; th3; d4; th5; th6; th7];
-    q_now = min(max(q_now, q_min), q_max);
+    acceptStep = false;
+    dq_try = dq;
+    % 若损失没下降，则令λ缩小1倍
+    for lineIter = 1:maxLineSearch
+        q_try = LocalApplyStep(q_now, dq_try, ToDeg, q_min, q_max);
+        Loss_try = LocalEvaluateLoss(q_try, p_ref, R_ref, posScale, rotScale, ToRad);
+
+        if Loss_try <= Loss * 1.01
+            q_now = q_try;
+            acceptStep = true;
+            break;
+        end
+
+        dq_try = 0.5 * dq_try;
+    end
+
+    if ~acceptStep
+        q_now = q_try;
+    end
 
     th1 = q_now(1);
     th2 = q_now(2);
@@ -149,6 +172,56 @@ while true
     iter = iter + 1;
 end
 
+end
+
+
+function q_next = LocalApplyStep(q_now, dq, ToDeg, q_min, q_max)
+q_next = q_now + [
+    dq(1)*ToDeg;
+    dq(2)*ToDeg;
+    dq(3)*ToDeg;
+    dq(4);
+    dq(5)*ToDeg;
+    dq(6)*ToDeg;
+    dq(7)*ToDeg
+];
+q_next = min(max(q_next, q_min), q_max);
+end
+
+
+function Loss = LocalEvaluateLoss(q, p_ref, R_ref, posScale, rotScale, ToRad)
+global Link
+
+Link(2).th = q(1)*ToRad;
+Link(3).th = q(2)*ToRad;
+Link(4).th = q(3)*ToRad;
+Link(5).dz = q(4);
+Link(6).th = q(5)*ToRad;
+Link(7).th = q(6)*ToRad;
+Link(8).th = q(7)*ToRad;
+
+for i = 1:8
+    Matrix_DH_Ln(i);
+end
+
+for i = 2:8
+    Link(i).A = Link(i-1).A * Link(i).A;
+    Link(i).p = Link(i).A(1:3,4);
+    Link(i).n = Link(i).A(:,1);
+    Link(i).o = Link(i).A(:,2);
+    Link(i).a = Link(i).A(:,3);
+    Link(i).R = [Link(i).n(1:3), Link(i).o(1:3), Link(i).a(1:3)];
+end
+
+p_err = p_ref - Link(8).p(1:3);
+R_err = R_ref * Link(8).R';
+w_err = LocalRotationVector(R_err);
+
+err = [
+    p_err / posScale;
+    w_err / rotScale
+];
+Loss = norm(err);
 end
 
 

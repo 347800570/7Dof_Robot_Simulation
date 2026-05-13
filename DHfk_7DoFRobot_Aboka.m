@@ -25,8 +25,8 @@ Link(5).dz = d4;
 Link(6).th = th5*ToDeg;
 Link(7).th = th6*ToDeg;
 Link(8).th = th7*ToDeg;
-Link(9).th = th7*ToDeg;
-Link(10).th = th7*ToDeg;
+Link(9).th = 0*ToDeg;
+Link(10).th = 0*ToDeg;
 
 for i=1:10
     Matrix_DH_Ln(i); %% 计算各个关节之间的齐次变换矩阵

@@ -8,10 +8,11 @@ close all;
 global Link
 
 % 设定目标位姿和起始位姿
-q_target = [-35; 55; -40; 850; 70; -50; 80];
-q0       = [10; 90; -90; 300; 60; -110; 66];
+q_target = [90; 90; 0; 500; 90; 90; 0];
+q0       = [60; 60; -30; 300; 60; 110; 66];
 
 % 正运动学计算目标位姿.
+DHfk_7DoFRobot_Aboka(q0(1),q0(2),q0(3),q0(4),q0(5),q0(6),q0(7),0);
 DHfk_7DoFRobot_Aboka(q_target(1),q_target(2),q_target(3),q_target(4),q_target(5),q_target(6),q_target(7),0);
 
 T_target = Link(8).A;

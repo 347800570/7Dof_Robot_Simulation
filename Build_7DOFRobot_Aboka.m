@@ -17,7 +17,7 @@ Link(5) = struct('name','J4' , 'th',  90*ToRad, 'dz', 20, 'dx', 0, 'alf',90*ToRa
 Link(6) = struct('name','J5' , 'th',  90*ToRad, 'dz', 0, 'dx', 400, 'alf',90*ToRad,'az',UZ);        % joint 5 -> joint 6
 Link(7) = struct('name','J6' , 'th',  90*ToRad, 'dz', 0, 'dx', 400, 'alf',90*ToRad,'az',UZ);        % joint 6 -> joint 7
 Link(8) = struct('name','J7' , 'th',  0*ToRad, 'dz', 100, 'dx', 0, 'alf',0*ToRad,'az',UZ);         % joint 7 -> END
-Link(9) = struct('name','F1' , 'th',  0*ToRad, 'dz', 0, 'dx', 60, 'alf',0*ToRad,'az',UZ);          % F1 -> F2
+Link(9) = struct('name','F1' , 'th',  0*ToRad, 'dz', 0, 'dx', 60, 'alf',0*ToRad,'az',UZ);          % END -> F1
 Link(10) = struct('name','F2' , 'th',  0*ToRad, 'dz', 0, 'dx', -120, 'alf',0*ToRad,'az',UZ);          % F1 -> F2
 
 
